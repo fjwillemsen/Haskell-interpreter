@@ -7,16 +7,26 @@ import Data.Typeable
 
 
 
+
+-- initializing the memory of size 10 x 10
+memory = initMem 10 10
+
 -- main function
 main = do
   -- read from stdin and parse text-based SVM file
   input <- getContents
   let result = parse program "(standard input)" input
 
+  printMem memory
+  -- print (length (memory!!1))
+  print (readMem memory 2 2)
+
   -- unwrap Either: prog of type Program or err of type ParseError
   case result of
     Left err -> printError err;
     Right prog -> mapM_ execute prog;
+
+
 
 
 
@@ -43,6 +53,9 @@ execute (Jc     string reg) = print string
 execute (Jeq    string reg) = print string
 -- error in case of unmatched instruction
 execute x = putStrLn ("Runtime Error: invalid statement '" ++ (show x) ++ "'")
+
+
+
 
 
 
@@ -115,6 +128,33 @@ movI loc val = print ((show loc) ++ " & " ++ (show val))
 -- --  operator that defines a label with the name specified in Arg1. It is not allowed to define labels with the same name, so in this case a runtime error should be raised.
 -- labelI :: String -> IO ()
 -- labelI id = print id
+
+
+
+
+
+-- Memory Function
+
+-- function for initializing the memory using integers n and m to set the size
+initMem :: Integer -> Integer -> [[Integer]]
+initMem n m = [ [ 0 :: Integer | j <- [1..n] ] | i <- [1..m] ]
+
+-- function for reading a memory location in a safe way, will return error if outside bounds
+readMem :: [[Integer]] -> Int -> Int -> Either String Integer
+readMem mem i j
+  | (length mem) > i && (length (mem!!i)) > j = Right (mem!!i!!j)
+  | otherwise = Left "Memory lookup failed, index out of bounds"
+
+-- function for printing the memory columns
+printMem :: [[Integer]] -> IO()
+printMem mem = do
+  putStrLn "Memory"
+  mapM_ printMemRow mem
+
+-- function for printing the memory rows
+printMemRow :: [Integer] -> IO()
+printMemRow memRow = print memRow
+
 
 
 
