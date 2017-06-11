@@ -3,15 +3,14 @@ module Main (main) where
 import ParseSVM
 import Text.Parsec.Error
 import Data.Typeable
-import Data.Array
-
+import Data.Sequence
+import Data.Foldable (toList)
 
 
 
 
 -- initializing the memory of size 10 x 10
-memory = initMem 10 10
-mem2 = initAMem 10 10
+memory = initMem 100
 
 -- main function
 main = do
@@ -19,9 +18,11 @@ main = do
   input <- getContents
   let result = parse program "(standard input)" input
 
-  printMem memory
-  print mem2
-  print (readMem memory 2 2)
+  print memory
+  memory <- writeMem memory 2 1
+  print (readMem memory 2)
+  -- print mem2
+  -- print (readMem memory 2 2)
 
   -- unwrap Either: prog of type Program or err of type ParseError
   case result of
@@ -138,31 +139,40 @@ movI loc val = print ((show loc) ++ " & " ++ (show val))
 -- Memory Function
 
 -- function for initializing the memory using integers n and m to set the size
-initMem :: Integer -> Integer -> [[Integer]]
-initMem n m = [ [ 0 :: Integer | j <- [1..n] ] | i <- [1..m] ]
+-- initMem :: Integer -> Integer -> [[Integer]]
+-- initMem n m = [ [ 0 :: Integer | j <- [1..n] ] | i <- [1..m] ]
 
 -- function for reading a memory location in a safe way, will return error if outside bounds
-readMem :: [[Integer]] -> Int -> Int -> Either String Integer
-readMem mem i j
-  | (length mem) > i && (length (mem!!i)) > j = Right (mem!!i!!j)
-  | otherwise = Left "Memory lookup failed, index out of bounds"
+-- readMem :: [[Integer]] -> Int -> Int -> Either String Integer
+-- readMem mem i j
+--   | (length mem) > i && (length (mem!!i)) > j = Right (mem!!i!!j)
+--   | otherwise = Left "Memory lookup failed, index out of bounds"
 
 -- function for printing the memory columns
-printMem :: [[Integer]] -> IO()
-printMem mem = do
-  putStrLn "Memory"
-  mapM_ printMemRow mem
+-- printMem :: [[Integer]] -> IO()
+-- printMem mem = do
+--   putStrLn "Memory"
+--   mapM_ printMemRow mem
+--
+-- -- function for printing the memory rows
+-- printMemRow :: [Integer] -> IO()
+-- printMemRow memRow = print memRow
 
--- function for printing the memory rows
-printMemRow :: [Integer] -> IO()
-printMemRow memRow = print memRow
 
+-- New Memory Implementation in a one-dimensional list, to be edited as a sequence
 
--- New Memory Implementation using Arrays instead of Lists for better performance
+-- function for initializing the memory using integer size to set the size
+initMem :: Integer -> [Integer]
+initMem size = [ 0 :: Integer | j <- [1..size] ]
 
--- function for initializing the memory using integers n and m to set the size
-initAMem :: Integer -> Integer -> Array (Integer, Integer) Integer
-initAMem n m = array ((0,0), (0, 1)) [((0, 0), 1)]
+-- function for reading a memory location in a safe way, will return error if outside bounds
+readMem :: [Integer] -> Int -> Either String Integer
+readMem mem index
+  | (Prelude.length mem) > index = Right (mem!!index)
+  | otherwise = Left ("Memory lookup failed, index" ++ (show index) ++ "out of bounds")
+
+writeMem :: [Integer] -> Int -> Integer -> [Integer]
+writeMem mem index value = toList (update index value (fromList mem))
 
 
 
