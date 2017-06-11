@@ -3,6 +3,7 @@ module Main (main) where
 import ParseSVM
 import Text.Parsec.Error
 import Data.Typeable
+import Data.Array
 
 
 
@@ -10,6 +11,7 @@ import Data.Typeable
 
 -- initializing the memory of size 10 x 10
 memory = initMem 10 10
+mem2 = initAMem 10 10
 
 -- main function
 main = do
@@ -18,7 +20,7 @@ main = do
   let result = parse program "(standard input)" input
 
   printMem memory
-  -- print (length (memory!!1))
+  print mem2
   print (readMem memory 2 2)
 
   -- unwrap Either: prog of type Program or err of type ParseError
@@ -154,6 +156,13 @@ printMem mem = do
 -- function for printing the memory rows
 printMemRow :: [Integer] -> IO()
 printMemRow memRow = print memRow
+
+
+-- New Memory Implementation using Arrays instead of Lists for better performance
+
+-- function for initializing the memory using integers n and m to set the size
+initAMem :: Integer -> Integer -> Array (Integer, Integer) Integer
+initAMem n m = array ((0,0), (0, 1)) [((0, 0), 1)]
 
 
 
