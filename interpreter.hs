@@ -2,14 +2,16 @@ module Main (main) where
 
 import ParseSVM
 import Text.Parsec.Error
-import Data.Typeable
+-- import Data.Typeable
 import Data.Sequence
 import Data.Foldable (toList)
 
 
 
 
--- initializing the memory of size 10 x 10
+
+
+-- initializing the memory of size N
 memory = initMem 100
 
 -- main function
@@ -18,11 +20,7 @@ main = do
   input <- getContents
   let result = parse program "(standard input)" input
 
-  print memory
-  memory <- writeMem memory 2 1
-  print (readMem memory 2)
-  -- print mem2
-  -- print (readMem memory 2 2)
+  prettyPrintMem (writeMem memory 2 1) -- prettyPrints the memory after value at index 2 has been changed to 1
 
   -- unwrap Either: prog of type Program or err of type ParseError
   case result of
@@ -136,43 +134,45 @@ movI loc val = print ((show loc) ++ " & " ++ (show val))
 
 
 
--- Memory Function
-
--- function for initializing the memory using integers n and m to set the size
--- initMem :: Integer -> Integer -> [[Integer]]
--- initMem n m = [ [ 0 :: Integer | j <- [1..n] ] | i <- [1..m] ]
-
--- function for reading a memory location in a safe way, will return error if outside bounds
--- readMem :: [[Integer]] -> Int -> Int -> Either String Integer
--- readMem mem i j
---   | (length mem) > i && (length (mem!!i)) > j = Right (mem!!i!!j)
---   | otherwise = Left "Memory lookup failed, index out of bounds"
-
--- function for printing the memory columns
--- printMem :: [[Integer]] -> IO()
--- printMem mem = do
---   putStrLn "Memory"
---   mapM_ printMemRow mem
---
--- -- function for printing the memory rows
--- printMemRow :: [Integer] -> IO()
--- printMemRow memRow = print memRow
 
 
--- New Memory Implementation in a one-dimensional list, to be edited as a sequence
+-- Memory Implementation
+--    Memory consists of a one dimensional list of Integers
+--    Using functions below, memory can be initialized, read, written to and printed
 
 -- function for initializing the memory using integer size to set the size
 initMem :: Integer -> [Integer]
 initMem size = [ 0 :: Integer | j <- [1..size] ]
 
--- function for reading a memory location in a safe way, will return error if outside bounds
+-- function for reading a memory value in a safe way, will return error if outside bounds
 readMem :: [Integer] -> Int -> Either String Integer
 readMem mem index
   | (Prelude.length mem) > index = Right (mem!!index)
-  | otherwise = Left ("Memory lookup failed, index" ++ (show index) ++ "out of bounds")
+  | otherwise = Left ("Memory lookup failed, index " ++ (show index) ++ " out of bounds")
 
+-- function for writing a memory value
 writeMem :: [Integer] -> Int -> Integer -> [Integer]
 writeMem mem index value = toList (update index value (fromList mem))
+
+-- function for printing the memory in a pretty way
+prettyPrintMem :: [Integer] -> IO()
+prettyPrintMem mem = do
+  putStrLn "\n\n - MEMORY - \n"
+  putStrLn (prettyPrintMemRec mem 1 0 "")
+
+-- recursive function for concatenating the elements of a list in a pretty string
+prettyPrintMemRec :: [Integer] -> Int -> Int -> String -> String
+-- absIndex is equal to index divided by 2 as the real index also counts ',' as elements, hence the +2
+prettyPrintMemRec mem index absIndex string
+  -- if index too large, end the recursion:
+  | ((Prelude.length mem) * 2) < (index) = string ++ "\n   memory size: " ++ (show absIndex) ++ "\n\n"
+  -- break the line if the index is divisible by 20 (every 20 elements):
+  | (absIndex > 0) && (absIndex `mod` 20 == 19) = prettyPrintMemRec mem (index + 2) (absIndex+1) (string ++ ([show mem!!index]) ++ "\n")
+  -- add the value of the index to the string:
+  | ((show mem!!index) /= '[') && ((show mem!!index) /= ']') && ((show mem!!index) /= ',') = prettyPrintMemRec mem (index + 2) (absIndex+1) (string ++ ([show mem!!index]) ++ " ")
+  -- no matching value, increment index and continue recursion:
+  | otherwise = prettyPrintMemRec mem (index+2) (absIndex+1) string
+
 
 
 
