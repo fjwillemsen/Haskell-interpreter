@@ -5,29 +5,41 @@ import Text.Parsec.Error
 -- import Data.Typeable
 import Data.Sequence
 import Data.Foldable (toList)
+import System.Environment
 
 
 
 
-
-
--- initializing the memory of size N
-memory = initMem 100
 
 -- main function
 main = do
   -- read from stdin and parse text-based SVM file
   input <- getContents
+  memsize <- getArgs
   let result = parse program "(standard input)" input
 
-  prettyPrintMem (writeMem memory 2 1) -- prettyPrints the memory after value at index 2 has been changed to 1
+  -- initializing the memory of size N where N is the command line argument
+  let memorysize = (read (memsize!!0) :: Int)
+  let memory = initMem memorysize
 
   -- unwrap Either: prog of type Program or err of type ParseError
   case result of
-    Left err -> printError err;
-    Right prog -> mapM_ execute prog;
+    Left err -> printError err
+    Right prog -> run prog memory
 
 
+
+-- Run Function
+
+-- recursive function for running the program
+run :: [Instruction] -> [Int] -> IO()
+run [] mem = putStrLn "End of program"
+run (instruction:list) mem = do
+  prettyPrintMem mem
+  print instruction
+  case execute instruction mem of
+    Left err -> putStrLn err  -- if error, halt program and report
+    Right res -> run list res -- if result, go on with recursion
 
 
 
@@ -35,25 +47,26 @@ main = do
 -- Execute Statement Function
 
 -- function for executing all statements in a list, example: "mapM_ execute prog" where prog is a list of instructions
-execute :: Instruction -> IO ()
--- /func /name  /arg1 /arg2   /statement
-execute (Nop)               = nopI
-execute (Mov    loc val)    = movI loc val
-execute (And    reg val)    = print reg
-execute (Or     reg val)    = print reg
-execute (Not    reg)        = print reg
-execute (Mod    reg val)    = print reg
-execute (Add    reg val)    = print reg
-execute (Sub    reg val)    = print reg
-execute (Mul    reg val)    = print reg
-execute (Div    reg val)    = print reg
-execute (Cmp    reg val)    = print reg
-execute (Label  string)     = print string
-execute (Jmp    string)     = print string
-execute (Jc     string reg) = print string
-execute (Jeq    string reg) = print string
--- error in case of unmatched instruction
-execute x = putStrLn ("Runtime Error: invalid statement '" ++ (show x) ++ "'")
+execute :: Instruction -> [Int] -> Either error [Int]
+-- /func /mem /name /arg1 /arg2 /statement
+execute (Nop)               mem = nopI mem
+execute (Mov    loc val)    mem = movI loc val mem
+-- execute (And    reg val)    mem = print reg
+-- execute (Or     reg val)    mem = print reg
+-- execute (Not    reg)        mem = print reg
+-- execute (Mod    reg val)    mem = print reg
+-- execute (Add    reg val)    mem = print reg
+-- execute (Sub    reg val)    mem = print reg
+-- execute (Mul    reg val)    mem = print reg
+-- execute (Div    reg val)    mem = print reg
+-- execute (Cmp    reg val)    mem = print reg
+-- execute (Label  string)     mem = print string
+-- execute (Jmp    string)     mem = print string
+-- execute (Jc     string reg) mem = print string
+-- execute (Jeq    string reg) mem = print string
+-- -- error in case of unmatched instruction
+execute x mem = Left (error ("Runtime Error: invalid statement '" ++ (show x) ++ "'"))
+-- execute x mem = putStrLn ("Runtime Error: invalid statement '" ++ (show x) ++ "'")
 
 
 
@@ -63,12 +76,15 @@ execute x = putStrLn ("Runtime Error: invalid statement '" ++ (show x) ++ "'")
 -- -- Instruction Functions
 
 -- function that doesn't do anything and leaves the state of the SVM unchanged
-nopI :: IO ()
-nopI = print '%'
+nopI :: [Int] -> Either error [Int]
+nopI mem = Right mem
 
 -- function that copies the content or value of Arg2 into Arg1. If the memory address is out of range then it throws a runtime exception.
-movI :: Location -> Value -> IO ()
-movI loc val = print ((show loc) ++ " & " ++ (show val))
+movI :: Location -> Value -> [Int] -> Either error [Int]
+-- movI loc val mem = writeMem mem 100 10
+movI loc val mem = do
+  -- print ((show loc) ++ " & " ++ (show val))
+  writeMem mem 2 3
 
 -- -- function that stores 1 into Arg1 if both arguments are >= 0, otherwise - 1. It accepts only integer numbers, otherwise it raises a runtime exception.
 -- andI :: Register -> Either Register (Either Address constant) -> IO ()
@@ -141,27 +157,29 @@ movI loc val = print ((show loc) ++ " & " ++ (show val))
 --    Using functions below, memory can be initialized, read, written to and printed
 
 -- function for initializing the memory using integer size to set the size
-initMem :: Integer -> [Integer]
-initMem size = [ 0 :: Integer | j <- [1..size] ]
+initMem :: Int -> [Int]
+initMem size = [ 0 :: Int | j <- [1..size] ]
 
--- function for reading a memory value in a safe way, will return error if outside bounds
-readMem :: [Integer] -> Int -> Either String Integer
+-- function for safely reading a memory value in a safe way, will return error if outside bounds
+readMem :: [Int] -> Int -> Either error Int
 readMem mem index
   | (Prelude.length mem) > index = Right (mem!!index)
-  | otherwise = Left ("Memory lookup failed, index " ++ (show index) ++ " out of bounds")
+  | otherwise = Left (error ("Memory read failed, index " ++ (show index) ++ " out of bounds"))
 
--- function for writing a memory value
-writeMem :: [Integer] -> Int -> Integer -> [Integer]
-writeMem mem index value = toList (update index value (fromList mem))
+-- function for safely writing a memory value
+writeMem :: [Int] -> Int -> Int -> Either error [Int]
+writeMem mem index value
+  | (Prelude.length mem) <= index = Left (error ("Memory write failed, index " ++ (show index) ++ " out of bounds"))
+  | otherwise = Right (toList (update index value (fromList mem)))
 
 -- function for printing the memory in a pretty way
-prettyPrintMem :: [Integer] -> IO()
+prettyPrintMem :: [Int] -> IO()
 prettyPrintMem mem = do
   putStrLn "\n\n - MEMORY - \n"
   putStrLn (prettyPrintMemRec mem 1 0 "")
 
 -- recursive function for concatenating the elements of a list in a pretty string
-prettyPrintMemRec :: [Integer] -> Int -> Int -> String -> String
+prettyPrintMemRec :: [Int] -> Int -> Int -> String -> String
 -- absIndex is equal to index divided by 2 as the real index also counts ',' as elements, hence the +2
 prettyPrintMemRec mem index absIndex string
   -- if index too large, end the recursion:
@@ -172,6 +190,7 @@ prettyPrintMemRec mem index absIndex string
   | ((show mem!!index) /= '[') && ((show mem!!index) /= ']') && ((show mem!!index) /= ',') = prettyPrintMemRec mem (index + 2) (absIndex+1) (string ++ ([show mem!!index]) ++ " ")
   -- no matching value, increment index and continue recursion:
   | otherwise = prettyPrintMemRec mem (index+2) (absIndex+1) string
+
 
 
 
@@ -192,3 +211,10 @@ printErrorMessage msg err = print (msg ++ err)
 -- function for printing all instructions in a list, example: "mapM_ printT prog" where prog is a list of instructions
 printT :: Instruction -> IO()
 printT instruction = print instruction
+
+-- recursive function for safely reading a value at the specified index of a list
+atIndex :: [a] -> Int -> Either error a
+atIndex [] _ = Left (error "Index out of bounds")
+atIndex (x:xs) index
+  | index <= 0 = Right x
+  | otherwise = atIndex xs (index-1)
