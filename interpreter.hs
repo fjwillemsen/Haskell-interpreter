@@ -27,21 +27,30 @@ main = do
   -- unwrap Either: prog of type Program or err of type ParseError
   case result of
     Left err -> printError err
-    Right prog -> run prog memory registers -- use "run" or "debug"
+    Right prog -> run prog memory registers 1 -- use "run" or "debug"
+
+
 
 
 
 -- Run Function
 
 -- recursive function for running the program
-run :: [Instruction] -> [Literal] -> [Literal] -> IO()
-run [] mem reg = putStrLn "End of program"
-run (instruction:list) mem reg = do
-  print instruction
+run :: [Instruction] -> [Literal] -> [Literal] -> Int -> IO()
+run [] mem reg pc = do
+  putStrLn ("End of program at PC " ++ (show pc))
   prettyPrintMem mem False
+run (instruction:list) mem reg pc = do
+  putStrLn "Current Storage State:"
+  prettyPrintReg reg True
+  prettyPrintMem mem False
+  putStrLn "\n\n\n"
+  putStrLn (multiplyCharRec '-' "" 0 100)
+  putStrLn ("\n\nInstruction '" ++ (show instruction) ++ "'")
+  putStrLn ("ProgramCounter " ++ (show pc))  -- displays the programcounter
   case (execute instruction mem reg) of
     Left err -> putStrLn err                 -- if error, halt program and report
-    Right (rmem, rreg) -> run list rmem rreg -- if result, go on with recursion
+    Right (rmem, rreg) -> run list rmem rreg (pc+1) -- if result, go on with recursion
 
 
 
@@ -87,18 +96,18 @@ nop mem reg = Right (mem, reg)
 
 -- function that copies the content or value of Arg2 into Arg1. If the memory address is out of range it will throw a runtime exception.
 mov :: Location -> Value -> [Literal] -> [Literal] -> Either error ([Literal], [Literal])
-mov (Address adr) (Location loc)   mem reg = case (writeMem mem (addressValue adr reg) (locationValue loc reg)) of
+mov (Address adr) (Location loc)   mem reg = case (locationRead loc mem reg) of
                                               Left err -> Left err
-                                              Right rmem -> Right (rmem, reg)
+                                              Right value -> case (writeMem mem (addressValue adr reg) value) of
+                                                Left err -> Left err
+                                                Right rmem -> Right (rmem, reg)
 mov (Address adr) (Literal lit)    mem reg = case (writeMem mem (addressValue adr reg) (lit)) of
                                               Left err -> Left err
                                               Right rmem -> Right (rmem, reg)
-mov (Register rg) (Location loc)   mem reg = case (writeMem mem (readReg rg reg) (locationValue loc reg)) of
+mov (Register rg) (Location loc)   mem reg = case (locationRead loc mem reg) of
                                               Left err -> Left err
-                                              Right rmem -> Right (rmem, reg)
-mov (Register rg) (Literal lit)    mem reg = case (writeMem mem (readReg rg reg) (lit)) of
-                                              Left err -> Left err
-                                              Right rmem -> Right (rmem, reg)
+                                              Right value -> Right (mem, (writeReg (rg) reg (value)))
+mov (Register rg) (Literal lit)    mem reg = Right (mem, (writeReg (rg) reg (lit)))
 
 -- -- function that stores 1 into Arg1 if both arguments are >= 0, otherwise - 1. It accepts only integer numbers, otherwise it raises a runtime exception.
 -- andI :: Register -> Either Register (Either Address constant) -> IO ()
@@ -176,11 +185,26 @@ locationValue :: Location -> [Literal] -> Literal
 locationValue (Address adr) reg = addressValue adr reg
 locationValue (Register rv) reg = readReg rv reg
 
+-- function for reading the value of a location, in memory or in register
+locationRead :: Location -> [Literal] -> [Literal] -> Either error Literal
+locationRead (Address adr) mem reg = readMem mem (addressValue adr reg)
+locationRead (Register rv) mem reg = Right (readReg rv reg)
+
 -- function for reading the value of a Literal type
 literalToString :: Literal -> String
 literalToString (Integer x) = show x
 literalToString (Float x)   = show x
 literalToString (String x)  = x
+
+-- function for calculating the number of spaces required to keep the prettyPrinters in columns
+literalSpacePrint :: Literal -> String
+literalSpacePrint lit = (multiplyCharRec ' ' "" 0 (5 - (Prelude.length (literalToString lit)))) ++ "|"
+
+-- function for unwrapping an Integer Literal and converting it to Int
+litToInt :: Literal -> Int
+litToInt (Integer x) = fromInteger x
+
+
 
 
 
@@ -219,6 +243,7 @@ prettyPrintReg reg printtype = do
 
 
 
+
 -- Memory Implementation
 --    Memory consists of a one dimensional list of Literals
 --    Using functions below, memory can be initialized, read, written to and printed
@@ -228,9 +253,9 @@ initMem :: Int -> [Literal]
 initMem size = [ (Integer 0) :: Literal | j <- [1..size] ]
 
 -- function for safely reading a memory value in a safe way, will return error if outside bounds
-readMem :: [Literal] -> Int -> Either error Literal
-readMem mem index
-  | (Prelude.length mem) > index = Right (mem!!index)
+readMem :: [Literal] -> Literal -> Either error Literal
+readMem mem (Integer index)
+  | (Prelude.length mem) > (fromInteger index) = Right (mem!!(fromInteger index))
   | otherwise = Left (error ("Memory read failed, index " ++ (show index) ++ " out of bounds"))
 
 -- function for safely writing a memory value
@@ -251,15 +276,14 @@ prettyPrintMem mem printtype = do
 -- recursive function for concatenating the types and values in an array
 printMemRecType :: [Literal] -> String -> String
 printMemRecType []        string = string
-printMemRecType (x:list)  string = printMemRecType list (string ++ (show x) ++ "    ")
+printMemRecType (x:list)  string = printMemRecType list (string ++ (show x) ++ (literalSpacePrint x))
 
 -- recursive function for concatenating the values in an array in a pretty way
 printPrettyMemRec :: [Literal] -> String -> Int -> Int -> String
-printPrettyMemRec []                  string index break = string
+printPrettyMemRec []        string index break = string
 printPrettyMemRec (x:list)  string index break
   | (index `mod` break == (break-1)) = printPrettyMemRec list (string ++ (literalToString x) ++ "\n") (index+1) break
-  | otherwise = printPrettyMemRec list (string ++ (literalToString x) ++ "    ") (index+1) break
-
+  | otherwise = printPrettyMemRec list (string ++ (literalToString x) ++ (literalSpacePrint x)) (index+1) break
 
 
 
@@ -267,18 +291,26 @@ printPrettyMemRec (x:list)  string index break
 
 -- Debug Functions
 --    Debugging allows for instruction-functions to be printed
---    Warning: initial memory and register state is always used as a side effect
+--    WARING: do not assume debugger instruction-functions are up to date
+--    Warning: initial memory and register state is always used and never returned
 
 -- recursive function for debugging the program (similar to "run")
-debug :: [Instruction] -> [Literal] -> [Literal] -> IO ()
-debug [] mem reg = putStrLn "End of program"
-debug (instruction:list) mem reg = do
-  putStrLn ("DEBUG: " ++ (show instruction))
-  prettyPrintMem mem False
+debug :: [Instruction] -> [Literal] -> [Literal] -> Int -> IO()
+debug [] mem reg pc = do
+  putStrLn ("End of program at PC " ++ (show pc))
   prettyPrintReg reg True
-  putStrLn "\n\n"
+  prettyPrintMem mem False
+debug (instruction:list) mem reg pc = do
+  putStrLn "Current storage state:"
+  prettyPrintReg reg True
+  prettyPrintMem mem False
+  putStrLn "\n\n\n"
+  putStrLn (multiplyCharRec '-' "" 0 100)
+  putStrLn ("\n\nDEBUG: Instruction '" ++ (show instruction) ++ "'")
+  putStrLn ("ProgramCounter " ++ (show pc))  -- displays the programcounter
   debugEx instruction mem reg
-  debug list mem reg
+  putStrLn "\n\n"
+  debug list mem reg (pc+1)
 
 -- function for debugging executable functions, example "debug instruction mem"
 debugEx :: Instruction -> [Literal] -> [Literal] -> IO ()
@@ -305,6 +337,8 @@ movD (Register rg) (Literal lit)    mem reg = case (writeMem mem (readReg rg reg
 
 
 
+
+
 -- Utility Functions
 
 -- function for printing errors and messages, example "printError x"
@@ -318,6 +352,13 @@ printErrorMessage msg err = print (msg ++ err)
 -- function for printing all instructions in a list, example: "mapM_ printT prog" where prog is a list of instructions
 printT :: Instruction -> IO()
 printT instruction = print instruction
+
+-- recursive function for creating a concatenated string out of a specified number of chars
+multiplyCharRec :: Char -> String -> Int -> Int -> String
+multiplyCharRec char string current target
+  | (current == target) = string
+  | (current < target) = multiplyCharRec char (string ++ [char]) (current+1) target
+  | otherwise = string
 
 -- recursive function for safely reading a value at the specified index of a list
 atIndex :: [a] -> Int -> Either error a
