@@ -2,7 +2,6 @@ module Main (main) where
 
 import ParseSVM
 import Text.Parsec.Error
--- import Data.Typeable
 import Data.Sequence
 import Data.Foldable (toList)
 import System.Environment
@@ -11,7 +10,9 @@ import System.Environment
 
 
 
--- main function
+-- Main Function
+
+-- reads arguments and the SVM-file, initializes memory and registers and starts execution unless Parse Errors
 main = do
   -- read from stdin and parse text-based SVM file
   input <- getContents
@@ -26,8 +27,7 @@ main = do
   -- unwrap Either: prog of type Program or err of type ParseError
   case result of
     Left err -> printError err
-    Right prog -> debug prog memory registers
-    -- Right prog -> run prog memory registers
+    Right prog -> run prog memory registers -- use "run" or "debug"
 
 
 
@@ -38,9 +38,9 @@ run :: [Instruction] -> [Literal] -> [Literal] -> IO()
 run [] mem reg = putStrLn "End of program"
 run (instruction:list) mem reg = do
   print instruction
-  prettyPrintMem mem
+  prettyPrintMem mem False
   case (execute instruction mem reg) of
-    Left err -> putStrLn err  -- if error, halt program and report
+    Left err -> putStrLn err                 -- if error, halt program and report
     Right (rmem, rreg) -> run list rmem rreg -- if result, go on with recursion
 
 
@@ -93,13 +93,12 @@ mov (Address adr) (Location loc)   mem reg = case (writeMem mem (addressValue ad
 mov (Address adr) (Literal lit)    mem reg = case (writeMem mem (addressValue adr reg) (lit)) of
                                               Left err -> Left err
                                               Right rmem -> Right (rmem, reg)
-mov (Register rg) (Location loc)   mem reg = case (writeMem mem (registerValue rg reg) (locationValue loc reg)) of
+mov (Register rg) (Location loc)   mem reg = case (writeMem mem (readReg rg reg) (locationValue loc reg)) of
                                               Left err -> Left err
                                               Right rmem -> Right (rmem, reg)
-mov (Register rg) (Literal lit)    mem reg = case (writeMem mem (registerValue rg reg) (lit)) of
+mov (Register rg) (Literal lit)    mem reg = case (writeMem mem (readReg rg reg) (lit)) of
                                               Left err -> Left err
                                               Right rmem -> Right (rmem, reg)
-mov x y mem reg = Left (error ("Function not executed properly. " ++ (show x) ++ "\n" ++ (show y)))
 
 -- -- function that stores 1 into Arg1 if both arguments are >= 0, otherwise - 1. It accepts only integer numbers, otherwise it raises a runtime exception.
 -- andI :: Register -> Either Register (Either Address constant) -> IO ()
@@ -163,37 +162,6 @@ mov x y mem reg = Left (error ("Function not executed properly. " ++ (show x) ++
 
 
 
--- Data Readers
--- functions for getting the values out of Address, Value and Location
-
--- getAddress :: Address -> [Int] -> Either Integer Register
--- getAddress (Direct int) mem = Left int
--- getAddress (Indirect reg) mem = Right reg
---
--- getLocation :: Location -> [Int] -> Either Register Address
--- getLocation (Register reg) mem = Left reg
--- getLocation (Address adr) mem = Right adr
---
--- getValue :: Value -> [Int] -> Either Literal Location
--- getValue (Literal lit)  mem = Left lit
--- getValue (Location loc) mem = Right loc
---
--- getLiteral :: Literal -> [Int] -> Either Integer (Either Double String)
--- getLiteral (Integer int) mem = Left int
--- getLiteral (Float flt)   mem = Right (Left flt)
--- getLiteral (String str)  mem = Right (Right str)
-
--- function for unwrapping values
---   case (getValue val mem) of
---     Left liter -> case (getLiteral liter mem) of
---                     Left int -> print int
---                     Right dblstr -> print dblstr
---     Right locat -> case (getLocation locat mem) of
---                     Left register -> print register
---                     Right address -> case (getAddress address mem) of
---                                       Left int -> print int
---                                       Right reg -> print reg
-
 
 
 -- Value Readers
@@ -201,30 +169,52 @@ mov x y mem reg = Left (error ("Function not executed properly. " ++ (show x) ++
 -- function for reading the value of an Address type
 addressValue :: Address -> [Literal] -> Literal
 addressValue (Direct int)  reg = (Integer int)
-addressValue (Indirect rv) reg = registerValue rv reg
+addressValue (Indirect rv) reg = readReg rv reg
 
 -- function for reading the value of a Location type
 locationValue :: Location -> [Literal] -> Literal
 locationValue (Address adr) reg = addressValue adr reg
-locationValue (Register rv) reg = registerValue rv reg
+locationValue (Register rv) reg = readReg rv reg
+
+-- function for reading the value of a Literal type
+literalToString :: Literal -> String
+literalToString (Integer x) = show x
+literalToString (Float x)   = show x
+literalToString (String x)  = x
+
 
 
 
 -- Register Implementation
 --    Register consists of a one dimensional list of Literals
---    Using functions below, register can be initialized and read
+--    Using functions below, register can be initialized, read, written to and printed
 
 -- function for initializing the register
 initReg :: [Literal]
 initReg = [ (Integer 0) :: Literal | j <- [1..4] ]
 
 -- function for reading from the register
-registerValue :: Register -> [Literal] -> Literal
-registerValue (Reg1) reg = reg!!0
-registerValue (Reg2) reg = reg!!1
-registerValue (Reg3) reg = reg!!2
-registerValue (Reg4) reg = reg!!3
+readReg :: Register -> [Literal] -> Literal
+readReg (Reg1) reg = reg!!0
+readReg (Reg2) reg = reg!!1
+readReg (Reg3) reg = reg!!2
+readReg (Reg4) reg = reg!!3
 
+-- function for writing to the register
+writeReg ::  Register -> [Literal] -> Literal -> [Literal]
+writeReg (Reg1) reg value = toList (update 0 value (fromList reg))
+writeReg (Reg2) reg value = toList (update 1 value (fromList reg))
+writeReg (Reg3) reg value = toList (update 2 value (fromList reg))
+writeReg (Reg4) reg value = toList (update 3 value (fromList reg))
+
+-- function for printing the register in a pretty way
+prettyPrintReg :: [Literal]-> Bool -> IO()
+prettyPrintReg reg printtype = do
+  putStrLn "\n\n - Register -"
+  putStrLn ("size: " ++  (show (Prelude.length reg)) ++ "\n")
+  if (printtype)
+  then putStrLn (printMemRecType reg "")
+  else putStrLn (printPrettyMemRec reg "" 0 19)
 
 
 
@@ -250,38 +240,43 @@ writeMem mem (Integer index) value
   | otherwise = Right (toList (update (fromInteger index) value (fromList mem)))
 
 -- function for printing the memory in a pretty way
-prettyPrintMem :: [Literal] -> IO()
-prettyPrintMem mem = do
-  putStrLn "\n\n - MEMORY - \n"
-  putStrLn (prettyPrintMemRec mem 1 0 "")
+prettyPrintMem :: [Literal]-> Bool -> IO()
+prettyPrintMem mem printtype = do
+  putStrLn "\n\n - MEMORY -"
+  putStrLn ("size: " ++  (show (Prelude.length mem)) ++ "\n")
+  if (printtype)
+  then putStrLn (printMemRecType mem "")
+  else putStrLn (printPrettyMemRec mem "" 0 19)
 
--- recursive function for concatenating the elements of a list in a pretty string
-prettyPrintMemRec :: [Literal] -> Int -> Int -> String -> String
--- absIndex is equal to index divided by 2 as the real index also counts ',' as elements, hence the +2
-prettyPrintMemRec mem index absIndex string
-  -- if index too large, end the recursion:
-  | ((Prelude.length mem) * 2) < (index) = string ++ "\n   memory size: " ++ (show absIndex) ++ "\n\n"
-  -- break the line if the index is divisible by 20 (every 20 elements):
-  | (absIndex > 0) && (absIndex `mod` 20 == 19) = prettyPrintMemRec mem (index + 2) (absIndex+1) (string ++ ([show mem!!index]) ++ "\n")
-  -- add the value of the index to the string:
-  | ((show mem!!index) /= '[') && ((show mem!!index) /= ']') && ((show mem!!index) /= ',') = prettyPrintMemRec mem (index + 2) (absIndex+1) (string ++ ([show mem!!index]) ++ " ")
-  -- no matching value, increment index and continue recursion:
-  | otherwise = prettyPrintMemRec mem (index+2) (absIndex+1) string
+-- recursive function for concatenating the types and values in an array
+printMemRecType :: [Literal] -> String -> String
+printMemRecType []        string = string
+printMemRecType (x:list)  string = printMemRecType list (string ++ (show x) ++ "    ")
+
+-- recursive function for concatenating the values in an array in a pretty way
+printPrettyMemRec :: [Literal] -> String -> Int -> Int -> String
+printPrettyMemRec []                  string index break = string
+printPrettyMemRec (x:list)  string index break
+  | (index `mod` break == (break-1)) = printPrettyMemRec list (string ++ (literalToString x) ++ "\n") (index+1) break
+  | otherwise = printPrettyMemRec list (string ++ (literalToString x) ++ "    ") (index+1) break
+
 
 
 
 
 
 -- Debug Functions
--- Debugging allows for instruction-functions to be printed
--- Warning: initial memory and register state is always used as a side effect
+--    Debugging allows for instruction-functions to be printed
+--    Warning: initial memory and register state is always used as a side effect
 
--- recursive function for debugging the program
+-- recursive function for debugging the program (similar to "run")
 debug :: [Instruction] -> [Literal] -> [Literal] -> IO ()
 debug [] mem reg = putStrLn "End of program"
 debug (instruction:list) mem reg = do
   putStrLn ("DEBUG: " ++ (show instruction))
-  prettyPrintMem mem
+  prettyPrintMem mem False
+  prettyPrintReg reg True
+  putStrLn "\n\n"
   debugEx instruction mem reg
   debug list mem reg
 
@@ -289,18 +284,24 @@ debug (instruction:list) mem reg = do
 debugEx :: Instruction -> [Literal] -> [Literal] -> IO ()
 -- /func /mem /name /arg1 /arg2 /statement
 debugEx (Nop)               mem reg = print mem
-debugEx (Mov    loc val)    mem reg = debugmov loc val mem reg
+debugEx (Mov    loc val)    mem reg = movD loc val mem reg
 -- error in case of unmatched instruction
 debugEx x mem reg = putStrLn (error ("Runtime Debugging Error: invalid statement '" ++ (show x) ++ "'"))
 
-
-
-debugmov :: Location -> Value -> [Literal] -> [Literal] -> IO ()
-debugmov (Address adr) (Location loc)   mem reg = print ((show (addressValue adr reg)) ++ (show loc))
-debugmov (Address adr) (Literal lit)    mem reg = print ((show (addressValue adr reg)) ++ (show lit))
-debugmov (Register rg) (Location loc)   mem reg = print ((show (registerValue rg reg)) ++ (show loc))
-debugmov (Register rg) (Literal lit)    mem reg = print ((show (registerValue rg reg)) ++ (show lit))
-
+-- function for debugging the "Mov" function
+movD :: Location -> Value -> [Literal] -> [Literal] -> IO ()
+movD (Address adr) (Location loc)   mem reg = case (writeMem mem (addressValue adr reg) (locationValue loc reg)) of
+                                              Left err -> putStrLn err
+                                              Right rmem -> prettyPrintMem rmem False
+movD (Address adr) (Literal lit)    mem reg = case (writeMem mem (addressValue adr reg) (lit)) of
+                                              Left err -> putStrLn err
+                                              Right rmem -> prettyPrintMem rmem False
+movD (Register rg) (Location loc)   mem reg = case (writeMem mem (readReg rg reg) (locationValue loc reg)) of
+                                              Left err -> putStrLn err
+                                              Right rmem -> prettyPrintMem rmem False
+movD (Register rg) (Literal lit)    mem reg = case (writeMem mem (readReg rg reg) (lit)) of
+                                              Left err -> putStrLn err
+                                              Right rmem -> prettyPrintMem rmem False
 
 
 
