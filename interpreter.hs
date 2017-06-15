@@ -1,5 +1,6 @@
 module Main (main) where
 
+-- Imports
 import ParseSVM
 import Text.Parsec.Error
 import Data.Sequence
@@ -7,8 +8,6 @@ import Data.Foldable (toList)
 import System.Environment
 import Control.Exception
 import Data.Time
-
-
 
 
 
@@ -42,6 +41,7 @@ main = do
   let registers = initReg
 
   -- unwrap Either: prog of type Program or err of type ParseError
+  putStrLn ("Start of program")
   case result of
     Left err -> printError err
     Right prog -> run (prog, memory, registers, 1, (prerun (prog, memory, registers, 1, []))) -- use "run" or "debug"
@@ -89,14 +89,14 @@ execute :: Instruction -> InstructionArgs -> Either error InstructionResult
 -- /func /mem /name /arg1 /arg2 /statement
 execute (Nop)               (list, mem, reg, pc, labels) = nop (list, mem, reg, pc, labels)
 execute (Mov    loc val)    (list, mem, reg, pc, labels) = mov loc val (list, mem, reg, pc, labels)
--- execute (And    rg val)    (list, mem, reg, pc, labels) = print reg
--- execute (Or     rg val)    (list, mem, reg, pc, labels) = print reg
--- execute (Not    rg)        (list, mem, reg, pc, labels) = print reg
--- execute (Mod    rg val)    (list, mem, reg, pc, labels) = print reg
+execute (And    rg val)    (list, mem, reg, pc, labels) = andI rg val (list, mem, reg, pc, labels)
+execute (Or     rg val)    (list, mem, reg, pc, labels) = orI rg val (list, mem, reg, pc, labels)
+execute (Not    rg)        (list, mem, reg, pc, labels) = notI rg (list, mem, reg, pc, labels)
+execute (Mod    rg val)    (list, mem, reg, pc, labels) = modI rg val (list, mem, reg, pc, labels)
 execute (Add    rg val)    (list, mem, reg, pc, labels) = add rg val (list, mem, reg, pc, labels)
 execute (Sub    rg val)    (list, mem, reg, pc, labels) = sub rg val (list, mem, reg, pc, labels)
 execute (Mul    rg val)    (list, mem, reg, pc, labels) = mul rg val (list, mem, reg, pc, labels)
-execute (Div    rg val)    (list, mem, reg, pc, labels)  = Main.div rg val (list, mem, reg, pc, labels)
+execute (Div    rg val)    (list, mem, reg, pc, labels)  = divI rg val (list, mem, reg, pc, labels)
 execute (Cmp    rg val)     (list, mem, reg, pc, labels) = cmp rg val (list, mem, reg, pc, labels)
 execute (Label  string)     (list, mem, reg, pc, labels) = nop (list, mem, reg, pc, labels)
 execute (Jmp    string)     (list, mem, reg, pc, labels) = jmp string (list, mem, reg, pc, labels)
@@ -134,29 +134,41 @@ mov (Register rg) (Location loc)   (list, mem, reg, pc, labels) = case (location
                                                                     Right value -> Right (list, mem, (writeReg (rg) reg (value)), (pc+1), labels)
 mov (Register rg) (Literal lit)    (list, mem, reg, pc, labels) = Right (list, mem, (writeReg (rg) reg (lit)), (pc+1), labels)
 
--- -- function that stores 1 into Arg1 if both arguments are >= 0, otherwise - 1. It accepts only integer numbers, otherwise it raises a runtime exception.
--- andI :: Register -> Either Register (Either Address constant) -> IO ()
--- andI arg1 arg2 = print (arg1 ++ arg2)
---
--- -- function that stores -1 into Arg1 if both arguments are < 0, otherwise 1. It accepts only integer numbers, otherwise it raises a runtime exception.
--- orI :: Register -> Either Register (Either Address constant) -> IO ()
--- orI arg1 arg2 = print (arg1 ++ arg2)
--- -- if arg1 < 0 and arg2 < 0
--- --  arg1 = -1
--- -- else
--- --  arg1 = 1
---
--- -- function that stores -1 in Arg1 if the argument is non-negative, otherwise it stores 0. It accepts only an integer number, otherwise it raises a runtime exception.
--- notI :: Register -> IO ()
--- notI arg1 = print arg1
--- -- if arg1 > 0
--- --  arg1 = -1
--- -- else
--- --  arg1 = 0
+-- function that stores 1 into Arg1 if both arguments are >= 0, otherwise - 1. It accepts only integer numbers, otherwise it raises a runtime exception.
+andI :: Register -> Value -> InstructionArgs -> Either error InstructionResult
+andI rg (Location loc) (list, mem, reg, pc, labels) = case ((locationRead loc mem reg)) of
+                                                      Left err -> Left err
+                                                      Right lit -> case (andArgs (readReg rg reg) lit) of
+                                                        Left err -> Left err
+                                                        Right result -> Right (list, mem, (writeReg rg reg result), (pc+1), labels)
+andI rg (Literal lit) (list, mem, reg, pc, labels) = case (andArgs (readReg rg reg) lit) of
+                                                      Left err -> Left err
+                                                      Right result -> Right (list, mem, (writeReg rg reg result), (pc+1), labels)
 
--- -- function that computes the modulus operation (remainder of the integer division) with Arg1 and Arg2 and stores the result in Arg1. It accepts only numerical arguments (integer or float), otherwise it raises a runtime exception.
--- modI :: Register -> Either Register (Either Address constant) -> IO () -- change output from IO () to () to make it void instead of print
--- modI arg1 arg2 = print (arg1 ++ arg2)
+-- function that stores -1 into Arg1 if both arguments are < 0, otherwise 1. It accepts only integer numbers, otherwise it raises a runtime exception.
+orI :: Register -> Value -> InstructionArgs -> Either error InstructionResult
+orI rg (Location loc) (list, mem, reg, pc, labels) = case ((locationRead loc mem reg)) of
+                                                      Left err -> Left err
+                                                      Right lit -> case (orArgs (readReg rg reg) lit) of
+                                                        Left err -> Left err
+                                                        Right result -> Right (list, mem, (writeReg rg reg result), (pc+1), labels)
+orI rg (Literal lit) (list, mem, reg, pc, labels) = case (orArgs (readReg rg reg) lit) of
+                                                      Left err -> Left err
+                                                      Right result -> Right (list, mem, (writeReg rg reg result), (pc+1), labels)
+
+-- function that stores -1 in Arg1 if the argument is non-negative, otherwise it stores 0. It accepts only an integer number, otherwise it raises a runtime exception.
+notI :: Register -> InstructionArgs -> Either error InstructionResult
+notI rg (list, mem, reg, pc, labels) = case (notArgs (readReg rg reg)) of
+                                         Left err -> Left err
+                                         Right result -> Right (list, mem, (writeReg rg reg result), (pc+1), labels)
+
+-- function that computes the modulus operation (remainder of the integer division) with Arg1 and Arg2 and stores the result in Arg1. It accepts only numerical arguments (integer or float), otherwise it raises a runtime exception.
+modI :: Register -> Value -> InstructionArgs -> Either error InstructionResult
+modI rg val (list, mem, reg, pc, labels) = case (getLits rg val (list, mem, reg, pc, labels)) of
+                                            Left err -> Left err
+                                            Right (arg1, arg2) -> case (modArgs arg1 arg2) of
+                                              Left err -> Left err
+                                              Right result -> Right (list, mem, (writeReg rg reg result), (pc+1), labels)
 
 -- function that computes the sum operation with Arg1 and Arg2 and stores the result in Arg1. It accepts only numerical arguments (integer or float), otherwise it raises a runtime exception.
 add :: Register -> Value -> InstructionArgs -> Either error InstructionResult
@@ -184,8 +196,8 @@ mul rg val (list, mem, reg, pc, labels) = case (getLits rg val (list, mem, reg, 
                                               Right result -> Right (list, mem, (writeReg rg reg result), (pc+1), labels)
 
 -- function that computes the division operation with Arg1 and Arg2 and stores the result in Arg1. Note that with integers you do the integer division and with floats the floating point division. It accepts only numerical arguments (integer or float), otherwise it raises a runtime exception.
-div :: Register -> Value -> InstructionArgs -> Either error InstructionResult
-div rg val (list, mem, reg, pc, labels) = case (getLits rg val (list, mem, reg, pc, labels)) of
+divI :: Register -> Value -> InstructionArgs -> Either error InstructionResult
+divI rg val (list, mem, reg, pc, labels) = case (getLits rg val (list, mem, reg, pc, labels)) of
                                             Left err -> Left err
                                             Right (arg1, arg2) -> case (divArgs arg1 arg2) of
                                               Left err -> Left err
@@ -231,6 +243,114 @@ label string (list, mem, reg, pc, labels)
 
 
 
+-- Instruction Utility Functions
+-- functions commonly used by the instructions defined above
+
+-- function that compares two Literals, returning -1 if Arg1 < Arg2, 0 if they are equal, 1 if Arg1 > Arg2.
+compareArgs :: Literal -> Literal -> Either error Literal
+compareArgs (Integer arg1) (Integer arg2)
+  | (arg1 < arg2)  = Right (Integer (-1))
+  | (arg1 == arg2) = Right (Integer 0)
+  | (arg1 > arg2)  = Right (Integer 1)
+compareArgs (Integer arg1) (Float arg2)
+  | ((fromIntegral arg1 :: Double) < arg2)  = Right (Integer (-1))
+  | ((fromIntegral arg1 :: Double) == arg2) = Right (Integer 0)
+  | ((fromIntegral arg1 :: Double) > arg2)  = Right (Integer 1)
+compareArgs (Float arg1) (Integer arg2)
+  | (arg1 < (fromIntegral arg2 :: Double))  = Right (Integer (-1))
+  | (arg1 == (fromIntegral arg2 :: Double)) = Right (Integer 0)
+  | (arg1 > (fromIntegral arg2 :: Double))  = Right (Integer 1)
+compareArgs (Float arg1) (Float arg2)
+  | (arg1 < arg2)  = Right (Integer (-1))
+  | (arg1 == arg2) = Right (Integer 0)
+  | (arg1 > arg2)  = Right (Integer 1)
+compareArgs _ _ = Left (error ("Values are not numbers"))
+
+-- function for adding two Literals
+addArgs :: Literal -> Literal -> Either error Literal
+addArgs (Integer arg1) (Integer arg2) = Right (Integer (arg1 + arg2))
+addArgs (Integer arg1) (Float arg2) = Right (Float ((fromIntegral arg1 :: Double) + arg2))
+addArgs (Float arg1) (Integer arg2) = Right (Float (arg1 + (fromIntegral arg2 :: Double)))
+addArgs (Float arg1) (Float arg2) = Right (Float (arg1 + arg2))
+addArgs _ _ = Left (error ("Values are not numbers"))
+
+-- function for subtracting two Literals
+subArgs :: Literal -> Literal -> Either error Literal
+subArgs (Integer arg1) (Integer arg2) = Right (Integer (arg1 - arg2))
+subArgs (Integer arg1) (Float arg2) = Right (Float ((fromIntegral arg1 :: Double) - arg2))
+subArgs (Float arg1) (Integer arg2) = Right (Float (arg1 - (fromIntegral arg2 :: Double)))
+subArgs (Float arg1) (Float arg2) = Right (Float (arg1 - arg2))
+subArgs _ _ = Left (error ("Values are not numbers"))
+
+-- function for multiplying two Literals
+mulArgs :: Literal -> Literal -> Either error Literal
+mulArgs (Integer arg1) (Integer arg2) = Right (Integer (arg1 * arg2))
+mulArgs (Integer arg1) (Float arg2) = Right (Float ((fromIntegral arg1 :: Double) * arg2))
+mulArgs (Float arg1) (Integer arg2) = Right (Float (arg1 * (fromIntegral arg2 :: Double)))
+mulArgs (Float arg1) (Float arg2) = Right (Float (arg1 * arg2))
+mulArgs _ _ = Left (error ("Values are not numbers"))
+
+-- function for dividing two Literals
+divArgs :: Literal -> Literal -> Either error Literal
+divArgs (Integer arg1) (Integer arg2) = Right (Integer (arg1 `div` arg2))
+divArgs (Integer arg1) (Float arg2) = Right (Float ((fromIntegral arg1 :: Double) / arg2))
+divArgs (Float arg1) (Integer arg2) = Right (Float (arg1 / (fromIntegral arg2 :: Double)))
+divArgs (Float arg1) (Float arg2) = Right (Float (arg1 / arg2))
+divArgs _ _ = Left (error ("Values are not numbers"))
+
+-- function for returning the modulo over two Literals
+modArgs :: Literal -> Literal -> Either error Literal
+modArgs (Integer arg1) (Integer arg2) = Right (Integer (arg1 `mod` arg2))
+modArgs (Integer arg1) (Float arg2) = Right (Integer (arg1 `mod` (round arg2)))
+modArgs (Float arg1) (Integer arg2) = Right (Integer ((round arg1) `mod` arg2))
+modArgs (Float arg1) (Float arg2) = Right (Integer ((round arg1) `mod` (round arg2)))
+modArgs _ _ = Left (error ("Values are not numbers"))
+
+-- function that returns -1 if both Literals are less than 0, 1 otherwise
+andArgs :: Literal -> Literal -> Either error Literal
+andArgs (Integer arg1) (Integer arg2)
+  | (arg1 >= 0 && arg2 >= 0) = Right (Integer 1)
+  | otherwise = Right (Integer (-1))
+andArgs (Integer arg1) (Float arg2)
+  | (arg1 >= 0 && arg2 >= 0) = Right (Integer 1)
+  | otherwise = Right (Integer (-1))
+andArgs (Float arg1) (Integer arg2)
+  | (arg1 >= 0 && arg2 >= 0) = Right (Integer 1)
+  | otherwise = Right (Integer (-1))
+andArgs (Float arg1) (Float arg2)
+  | (arg1 >= 0 && arg2 >= 0) = Right (Integer 1)
+  | otherwise = Right (Integer (-1))
+andArgs _ _ = Left (error "Values are not numbers")
+
+-- function that returns -1 if both Literals are less than 0, 1 otherwise
+orArgs :: Literal -> Literal -> Either error Literal
+orArgs (Integer arg1) (Integer arg2)
+  | (arg1 < 0 && arg2 < 0) = Right (Integer (-1))
+  | otherwise = Right (Integer 1)
+orArgs (Integer arg1) (Float arg2)
+  | (arg1 < 0 && arg2 < 0) = Right (Integer (-1))
+  | otherwise = Right (Integer 1)
+orArgs (Float arg1) (Integer arg2)
+  | (arg1 < 0 && arg2 < 0) = Right (Integer (-1))
+  | otherwise = Right (Integer 1)
+orArgs (Float arg1) (Float arg2)
+  | (arg1 < 0 && arg2 < 0) = Right (Integer (-1))
+  | otherwise = Right (Integer 1)
+orArgs _ _ = Left (error "Values are not numbers")
+
+-- function that returns -1 if the Literal Integer is non-negative, 0 otherwise
+notArgs :: Literal -> Either error Literal
+notArgs (Integer x)
+  | (x < 0) = Right (Integer 0)
+  | otherwise = Right (Integer (-1))
+notArgs x = Left (error ("Value " ++ (show x) ++ " is not an Integer"))
+
+
+
+
+
+
+
 
 -- Value Readers
 
@@ -249,6 +369,16 @@ locationRead :: Location -> [Literal] -> [Literal] -> Either error Literal
 locationRead (Address adr) mem reg = readMem mem (addressValue adr reg)
 locationRead (Register rv) mem reg = Right (readReg rv reg)
 
+
+-- Literal Utility Functions
+
+-- function for retrieving Literal values from Register and Value
+getLits :: Register -> Value -> InstructionArgs -> Either error (Literal, Literal)
+getLits rg (Location loc) (list, mem, reg, pc, labels) = case (locationRead loc mem reg) of
+                                                          Left err -> Left err
+                                                          Right val -> Right (((readReg rg reg), val))
+getLits rg (Literal val) (list, mem, reg, pc, labels)  = Right (((readReg rg reg), val))
+
 -- function for reading the value of a Literal type
 literalToString :: Literal -> String
 literalToString (Integer x) = show x
@@ -262,6 +392,7 @@ literalSpacePrint lit = (multiplyCharRec ' ' "" 0 (5 - (Prelude.length (literalT
 -- function for unwrapping an Integer Literal and converting it to Int
 litToInt :: Literal -> Int
 litToInt (Integer x) = fromInteger x
+
 
 
 
@@ -298,6 +429,7 @@ prettyPrintReg reg printtype = do
   if (printtype)
   then putStrLn (printMemRecType reg "")
   else putStrLn (printPrettyMemRec reg "" 0 19)
+
 
 
 
@@ -348,53 +480,6 @@ printPrettyMemRec (x:list)  string index break
 
 
 
--- Debug Functions
---    Debugging allows for instruction-functions to be printed
---    WARING: do not assume debugger instruction-functions are up to date
---    Warning: initial memory and register state is always used and never returned
-
--- recursive function for debugging the program (similar to "run")
-debug :: [Instruction] -> [Literal] -> [Literal] -> Int -> IO()
-debug [] mem reg pc = do
-  putStrLn ("End of program at PC " ++ (show pc))
-  prettyPrintReg reg True
-  prettyPrintMem mem False
-debug (instruction:list) mem reg pc = do
-  putStrLn "Current storage state:"
-  prettyPrintReg reg True
-  prettyPrintMem mem False
-  putStrLn "\n\n\n"
-  putStrLn (multiplyCharRec '-' "" 0 100)
-  putStrLn ("\n\nDEBUG: Instruction '" ++ (show instruction) ++ "'")
-  putStrLn ("ProgramCounter " ++ (show pc))  -- displays the programcounter
-  debugEx instruction mem reg
-  putStrLn "\n\n"
-  debug list mem reg (pc+1)
-
--- function for debugging executable functions, example "debug instruction mem"
-debugEx :: Instruction -> [Literal] -> [Literal] -> IO ()
--- /func /mem /name /arg1 /arg2 /statement
-debugEx (Nop)               mem reg = print mem
-debugEx (Mov    loc val)    mem reg = movD loc val mem reg
--- error in case of unmatched instruction
-debugEx x mem reg = putStrLn (error ("Runtime Debugging Error: invalid statement '" ++ (show x) ++ "'"))
-
--- function for debugging the "Mov" function
-movD :: Location -> Value -> [Literal] -> [Literal] -> IO ()
-movD (Address adr) (Location loc)   mem reg = case (writeMem mem (addressValue adr reg) (locationValue loc reg)) of
-                                              Left err -> putStrLn err
-                                              Right rmem -> prettyPrintMem rmem False
-movD (Address adr) (Literal lit)    mem reg = case (writeMem mem (addressValue adr reg) (lit)) of
-                                              Left err -> putStrLn err
-                                              Right rmem -> prettyPrintMem rmem False
-movD (Register rg) (Location loc)   mem reg = case (writeMem mem (readReg rg reg) (locationValue loc reg)) of
-                                              Left err -> putStrLn err
-                                              Right rmem -> prettyPrintMem rmem False
-movD (Register rg) (Literal lit)    mem reg = case (writeMem mem (readReg rg reg) (lit)) of
-                                              Left err -> putStrLn err
-                                              Right rmem -> prettyPrintMem rmem False
-
-
 
 
 
@@ -439,62 +524,3 @@ labelReturnRec string [] = Left (error (string ++ " is not defined as a label"))
 labelReturnRec string ((lstring, llist, pc):list)
   | (string == lstring) = Right (string, llist, pc)
   | otherwise = labelReturnRec string list
-
--- function for retrieving Literal values from Register and Value
-getLits :: Register -> Value -> InstructionArgs -> Either error (Literal, Literal)
-getLits rg (Location loc) (list, mem, reg, pc, labels) = case (locationRead loc mem reg) of
-                                                      Left err -> Left err
-                                                      Right val -> Right (((readReg rg reg), val))
-getLits rg (Literal val) (list, mem, reg, pc, labels)  = Right (((readReg rg reg), val))
-
--- function that compares two Literals, returning -1 if Arg1 < Arg2, 0 if they are equal, 1 if Arg1 > Arg2.
-compareArgs :: Literal -> Literal -> Either error Literal
-compareArgs (Integer arg1) (Integer arg2)
-  | (arg1 < arg2)  = Right (Integer (-1))
-  | (arg1 == arg2) = Right (Integer 0)
-  | (arg1 > arg2)  = Right (Integer 1)
-compareArgs (Integer arg1) (Float arg2)
-  | ((fromIntegral arg1 :: Double) < arg2)  = Right (Integer (-1))
-  | ((fromIntegral arg1 :: Double) == arg2) = Right (Integer 0)
-  | ((fromIntegral arg1 :: Double) > arg2)  = Right (Integer 1)
-compareArgs (Float arg1) (Integer arg2)
-  | (arg1 < (fromIntegral arg2 :: Double))  = Right (Integer (-1))
-  | (arg1 == (fromIntegral arg2 :: Double)) = Right (Integer 0)
-  | (arg1 > (fromIntegral arg2 :: Double))  = Right (Integer 1)
-compareArgs (Float arg1) (Float arg2)
-  | (arg1 < arg2)  = Right (Integer (-1))
-  | (arg1 == arg2) = Right (Integer 0)
-  | (arg1 > arg2)  = Right (Integer 1)
-compareArgs _ _ = Left (error ("Values are not numbers"))
-
--- function for adding two Literals
-addArgs :: Literal -> Literal -> Either error Literal
-addArgs (Integer arg1) (Integer arg2) = Right (Integer (arg1 + arg2))
-addArgs (Integer arg1) (Float arg2) = Right (Float ((fromIntegral arg1 :: Double) + arg2))
-addArgs (Float arg1) (Integer arg2) = Right (Float (arg1 + (fromIntegral arg2 :: Double)))
-addArgs (Float arg1) (Float arg2) = Right (Float (arg1 + arg2))
-addArgs _ _ = Left (error ("Values are not numbers"))
-
--- function for subtracting two Literals
-subArgs :: Literal -> Literal -> Either error Literal
-subArgs (Integer arg1) (Integer arg2) = Right (Integer (arg1 - arg2))
-subArgs (Integer arg1) (Float arg2) = Right (Float ((fromIntegral arg1 :: Double) - arg2))
-subArgs (Float arg1) (Integer arg2) = Right (Float (arg1 - (fromIntegral arg2 :: Double)))
-subArgs (Float arg1) (Float arg2) = Right (Float (arg1 - arg2))
-subArgs _ _ = Left (error ("Values are not numbers"))
-
--- function for multiplying two Literals
-mulArgs :: Literal -> Literal -> Either error Literal
-mulArgs (Integer arg1) (Integer arg2) = Right (Integer (arg1 * arg2))
-mulArgs (Integer arg1) (Float arg2) = Right (Float ((fromIntegral arg1 :: Double) * arg2))
-mulArgs (Float arg1) (Integer arg2) = Right (Float (arg1 * (fromIntegral arg2 :: Double)))
-mulArgs (Float arg1) (Float arg2) = Right (Float (arg1 * arg2))
-mulArgs _ _ = Left (error ("Values are not numbers"))
-
--- function for dividing two Literals
-divArgs :: Literal -> Literal -> Either error Literal
-divArgs (Integer arg1) (Integer arg2) = Right (Integer (arg1 `Prelude.div` arg2))
-divArgs (Integer arg1) (Float arg2) = Right (Float ((fromIntegral arg1 :: Double) / arg2))
-divArgs (Float arg1) (Integer arg2) = Right (Float (arg1 / (fromIntegral arg2 :: Double)))
-divArgs (Float arg1) (Float arg2) = Right (Float (arg1 / arg2))
-divArgs _ _ = Left (error ("Values are not numbers"))
