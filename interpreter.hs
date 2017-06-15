@@ -5,6 +5,8 @@ import Text.Parsec.Error
 import Data.Sequence
 import Data.Foldable (toList)
 import System.Environment
+import Control.Exception
+import Data.Time
 
 
 
@@ -27,6 +29,7 @@ type InstructionResult = ([Instruction], [Literal], [Literal], Int, Labels)
 
 -- reads arguments and the SVM-file, initializes memory and registers and starts execution unless Parse Errors
 main = do
+  start <- getCurrentTime -- get starttime
   -- read from stdin and parse text-based SVM file
   input <- getContents
   memsize <- getArgs
@@ -42,12 +45,14 @@ main = do
   case result of
     Left err -> printError err
     Right prog -> run (prog, memory, registers, 1, (prerun (prog, memory, registers, 1, []))) -- use "run" or "debug"
+  end <- getCurrentTime -- get endtime
+  putStrLn ("Execution Duration: " ++ (show (diffUTCTime end start)))
 
 
 
 
 
--- Run Function
+-- Run Functions
 
 -- recursive function for preprocessing the list of labels
 prerun :: InstructionArgs -> Labels
@@ -91,7 +96,7 @@ execute (Mov    loc val)    (list, mem, reg, pc, labels) = mov loc val (list, me
 execute (Add    rg val)    (list, mem, reg, pc, labels) = add rg val (list, mem, reg, pc, labels)
 -- execute (Sub    rg val)    (list, mem, reg, pc, labels) = print reg
 -- execute (Mul    rg val)    (list, mem, reg, pc, labels) = print reg
--- execute (Div    rg val)    (list, mem, reg, pc, labels) = print reg
+execute (Div    rg val)    (list, mem, reg, pc, labels)  = Main.div rg val (list, mem, reg, pc, labels)
 execute (Cmp    rg val)     (list, mem, reg, pc, labels) = cmp rg val (list, mem, reg, pc, labels)
 execute (Label  string)     (list, mem, reg, pc, labels) = nop (list, mem, reg, pc, labels)
 execute (Jmp    string)     (list, mem, reg, pc, labels) = jmp string (list, mem, reg, pc, labels)
@@ -172,9 +177,16 @@ add rg (Literal val) (list, mem, reg, pc, labels)  = case (addArgs (readReg rg r
 -- mulI :: Register -> Either Register (Either Address constant) -> IO ()
 -- mulI arg1 arg2 = print (arg1 ++ arg2)
 --
--- -- function that computes the division operation with Arg1 and Arg2 and stores the result in Arg1. Note that with integers you do the integer division and with floats the floating point division. It accepts only numerical arguments (integer or float), otherwise it raises a runtime exception.
--- divI :: Register -> Either Register (Either Address constant) -> IO ()
--- divI arg1 arg2 = print (arg1 ++ arg2)
+-- function that computes the division operation with Arg1 and Arg2 and stores the result in Arg1. Note that with integers you do the integer division and with floats the floating point division. It accepts only numerical arguments (integer or float), otherwise it raises a runtime exception.
+div :: Register -> Value -> InstructionArgs -> Either error InstructionResult
+div rg (Location loc) (list, mem, reg, pc, labels) = case (locationRead loc mem reg) of
+                                                      Left err -> Left err
+                                                      Right val -> case (divArgs (readReg rg reg) val) of
+                                                        Left err -> Left err
+                                                        Right sum -> Right (list, mem, (writeReg rg reg sum), (pc+1), labels)
+div rg (Literal val) (list, mem, reg, pc, labels)  = case (divArgs (readReg rg reg) val) of
+                                                      Left err -> Left err
+                                                      Right sum -> Right (list, mem, (writeReg rg reg sum), (pc+1), labels)
 
 -- function that compares the two arguments, returning -1 if Arg1 < Arg2, 0 if they are equal, 1 if Arg1 > Arg2. The result is stored in Arg1. It accepts only numerical values otherwise it raises a runtime exception.
 cmp :: Register -> Value -> InstructionArgs -> Either error InstructionResult
@@ -455,3 +467,11 @@ addArgs (Integer arg1) (Float arg2) = Right (Float ((fromIntegral arg1 :: Double
 addArgs (Float arg1) (Integer arg2) = Right (Float (arg1 + (fromIntegral arg2 :: Double)))
 addArgs (Float arg1) (Float arg2) = Right (Float (arg1 + arg2))
 addArgs _ _ = Left (error ("Values are not numbers"))
+
+-- function for dividing two Literals
+divArgs :: Literal -> Literal -> Either error Literal
+divArgs (Integer arg1) (Integer arg2) = Right (Integer (arg1 `Prelude.div` arg2))
+divArgs (Integer arg1) (Float arg2) = Right (Float ((fromIntegral arg1 :: Double) / arg2))
+divArgs (Float arg1) (Integer arg2) = Right (Float (arg1 / (fromIntegral arg2 :: Double)))
+divArgs (Float arg1) (Float arg2) = Right (Float (arg1 / arg2))
+divArgs _ _ = Left (error ("Values are not numbers"))
